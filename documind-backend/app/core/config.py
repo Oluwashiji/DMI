@@ -1,0 +1,36 @@
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class Settings(BaseSettings):
+    """
+    All values are read from environment variables (or a local .env file).
+    See .env.example for the full list and sane local defaults.
+    """
+
+    # --- Database (Neon Postgres in production) ---
+    # e.g. postgresql+psycopg2://user:password@ep-xxxx.neon.tech/documind?sslmode=require
+    database_url: str = "sqlite:///./documind.db"
+
+    # --- Auth / JWT ---
+    jwt_secret_key: str = "change-me-in-production"
+    jwt_algorithm: str = "HS256"
+    jwt_expire_minutes: int = 60 * 24 * 7  # 7 days
+
+    # --- CORS ---
+    # Comma-separated list of allowed origins, e.g. "http://localhost:5173,https://app.documind.io"
+    cors_origins: str = "http://localhost:5173"
+
+    # --- Groq / extraction (wired up in the extraction-endpoint phase) ---
+    groq_api_key: str = ""
+
+    # --- File storage ---
+    upload_dir: str = "./uploads"
+
+    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+
+    @property
+    def cors_origin_list(self) -> list[str]:
+        return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]
+
+
+settings = Settings()
