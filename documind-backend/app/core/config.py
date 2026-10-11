@@ -20,8 +20,20 @@ class Settings(BaseSettings):
     # Comma-separated list of allowed origins, e.g. "http://localhost:5173,https://app.documind.io"
     cors_origins: str = "http://localhost:5173"
 
-    # --- Groq / extraction (wired up in the extraction-endpoint phase) ---
+    # --- Groq / extraction ---
     groq_api_key: str = ""
+    # Check https://console.groq.com/docs/models if Groq retires this model.
+    groq_model: str = "llama-3.3-70b-versatile"
+    # Cap on characters of document text sent to the LLM (keeps token usage and cost down).
+    max_llm_chars: int = 10000
+
+    # --- Upload limits / OCR ---
+    max_upload_mb: int = 25
+    max_pdf_pages: int = 10
+    ocr_dpi: int = 200
+    # Full path to the tesseract binary. Only needed on Windows/macOS when it isn't on PATH,
+    # e.g. C:\Program Files\Tesseract-OCR\tesseract.exe
+    tesseract_cmd: str = ""
 
     # --- File storage ---
     upload_dir: str = "./uploads"

@@ -10,6 +10,8 @@ import {
   exportExcel,
   extractDocument,
   getHistory,
+  updateExtraction,
+  type ExtractedInvoice,
   type ExtractionRecord,
   type ExtractProgressEvent,
 } from "../lib/api";
@@ -34,6 +36,26 @@ function rowsFromExtraction(record: ExtractionRecord): EditableRow[] {
     { field: "Total", value: d.total != null ? String(d.total) : "" },
     { field: "Currency", value: d.currency ?? "" },
   ];
+}
+
+function numberOrNull(value: string): number | null {
+  const n = parseFloat(value.replace(/[^\d.-]/g, ""));
+  return Number.isFinite(n) ? n : null;
+}
+
+/** Rebuilds the invoice from the (possibly edited) form fields. Line items are kept as extracted. */
+function invoiceFromRows(base: ExtractedInvoice, rows: EditableRow[]): ExtractedInvoice {
+  const get = (field: string) => rows.find((r) => r.field === field)?.value.trim() ?? "";
+  return {
+    ...base,
+    vendor_name: get("Vendor name") || null,
+    invoice_number: get("Invoice number") || null,
+    date: get("Date") || null,
+    subtotal: numberOrNull(get("Subtotal")),
+    tax: numberOrNull(get("Tax")),
+    total: numberOrNull(get("Total")),
+    currency: get("Currency") || null,
+  };
 }
 
 export function Dashboard() {
@@ -96,13 +118,17 @@ export function Dashboard() {
   const startUpload = () => inputRef.current?.click();
 
   const handleExport = async (format: "csv" | "excel") => {
-    if (!activeExtraction) {
+    if (!activeExtraction || !activeExtraction.extracted_data) {
       setToast("Upload and extract a document first.");
       return;
     }
     try {
-      if (format === "csv") await exportCsv(activeExtraction.id, `${activeExtraction.filename}.csv`);
-      else await exportExcel(activeExtraction.id, `${activeExtraction.filename}.xlsx`);
+      // Save any edits first, so the export contains what is on screen.
+      const saved = await updateExtraction(activeExtraction.id, invoiceFromRows(activeExtraction.extracted_data, rows));
+      setActiveExtraction(saved);
+      loadHistory();
+      if (format === "csv") await exportCsv(saved.id, `${saved.filename}.csv`);
+      else await exportExcel(saved.id, `${saved.filename}.xlsx`);
       setToast(`${format.toUpperCase()} export downloaded.`);
     } catch (err) {
       setToast(err instanceof ApiError ? err.message : "Export failed. Please try again.");

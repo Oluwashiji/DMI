@@ -42,16 +42,24 @@ export class ApiError extends Error {
   }
 }
 
+/** Pulls a readable message out of a FastAPI error response. */
+async function errorDetail(res: Response): Promise<string> {
+  let detail = res.statusText || "Request failed";
+  try {
+    const body = await res.json();
+    if (typeof body.detail === "string") detail = body.detail;
+    else if (Array.isArray(body.detail)) {
+      detail = (body.detail as { msg?: string }[]).map((d) => d.msg ?? "Invalid input").join("; ");
+    }
+  } catch {
+    // response wasn't JSON - fall back to statusText
+  }
+  return detail;
+}
+
 async function handleJson<T>(res: Response): Promise<T> {
   if (!res.ok) {
-    let detail = res.statusText;
-    try {
-      const body = await res.json();
-      detail = body.detail ?? detail;
-    } catch {
-      // response wasn't JSON - fall back to statusText
-    }
-    throw new ApiError(detail, res.status);
+    throw new ApiError(await errorDetail(res), res.status);
   }
   return res.json();
 }
@@ -154,13 +162,14 @@ export async function extractDocument(
   });
 
   if (!res.ok || !res.body) {
-    throw new ApiError(res.statusText || "Extraction failed to start", res.status);
+    throw new ApiError(await errorDetail(res), res.status);
   }
 
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
   let finalResult: ExtractionRecord | null = null;
+  let errorMessage: string | null = null;
 
   while (true) {
     const { done, value } = await reader.read();
@@ -180,6 +189,9 @@ export async function extractDocument(
         if (event.stage === "complete" && event.result) {
           finalResult = event.result;
         }
+        if (event.stage === "error") {
+          errorMessage = event.message ?? "Extraction failed.";
+        }
       } catch {
         // ignore malformed SSE frames
       }
@@ -187,7 +199,7 @@ export async function extractDocument(
   }
 
   if (!finalResult) {
-    throw new ApiError("Stream ended before extraction completed", 500);
+    throw new ApiError(errorMessage ?? "Stream ended before extraction completed", 500);
   }
   return finalResult;
 }
@@ -214,6 +226,16 @@ export function exportCsv(extractionId: string, filename = "documind-export.csv"
 
 export function exportExcel(extractionId: string, filename = "documind-export.xlsx") {
   return downloadFile(`/api/exports/excel?extraction_id=${extractionId}`, filename);
+}
+
+/** Saves the user's edits so CSV/Excel exports match what is on screen. */
+export async function updateExtraction(extractionId: string, data: ExtractedInvoice) {
+  const res = await fetch(`${API_URL}/api/extractions/${extractionId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...authHeaders() },
+    body: JSON.stringify(data),
+  });
+  return handleJson<ExtractionRecord>(res);
 }
 
 // ---------- History ----------

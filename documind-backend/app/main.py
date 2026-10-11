@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.routes import auth
+from app.api.routes import auth, extract
 from app.core.config import settings
 from app.db.base import Base, engine
 
@@ -22,6 +22,7 @@ app.add_middleware(
 )
 
 app.include_router(auth.router)
+app.include_router(extract.router)
 
 
 @app.get("/health", tags=["meta"])
