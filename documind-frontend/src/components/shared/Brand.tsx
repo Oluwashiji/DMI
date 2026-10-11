@@ -1,6 +1,6 @@
 import { ArrowUpRight, Check, FileText, Sparkles } from "lucide-react";
 import type { ReactNode } from "react";
-import "../_group.css";
+import "../dm.css";
 
 export function Brand({ compact = false }: { compact?: boolean }) {
   return (
