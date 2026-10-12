@@ -21,9 +21,9 @@ export function Landing() {
     <main className="dm-root dm-noise">
       <section className="relative min-h-[760px] overflow-hidden">
         <video className="pointer-events-none absolute inset-0 h-full w-full object-cover" src="/hero-bg.mp4" autoPlay muted loop playsInline preload="auto" />
-        <div className="pointer-events-none absolute inset-0 bg-white/70" />
+        <div className="pointer-events-none absolute inset-0 bg-gradient-to-r from-white/90 via-white/50 to-transparent" />
+        <div className="pointer-events-none absolute inset-x-0 top-0 h-36 bg-gradient-to-b from-white/70 to-transparent" />
         <div className="dm-grid pointer-events-none absolute inset-0 opacity-70" />
-        <div className="pointer-events-none absolute -right-40 top-8 h-[520px] w-[520px] rounded-full bg-[#722F37]/10 blur-[120px]" />
         <header className="relative z-10 flex w-full items-center justify-between px-6 py-6 lg:px-8">
           <Brand />
           <nav className={`${mobile ? "absolute left-4 right-4 top-20 flex" : "hidden md:flex"} items-center gap-8 rounded-2xl border border-[#1c211e]/10 bg-[#ffffff]/95 p-4 text-[12px] text-[#56605a] backdrop-blur-xl md:static md:border-0 md:bg-transparent md:p-0`}>
@@ -65,8 +65,8 @@ export function Landing() {
             <button onClick={()=>notify("Privacy center opened.")} className="transition hover:text-white">Privacy</button>
             <button onClick={()=>notify("Contact form opened.")} className="transition hover:text-white">Contact</button>
           </div>
+          <p className="relative mt-8 text-center text-[11px] text-white/50"><span className="font-semibold text-white/80">DocuMind:</span> Structured clarity for the work behind the work.</p>
         </div></section>
-      <footer className="w-full py-8 text-center text-[11px] text-[#6b756e]"><span className="font-semibold text-[#1c211e]">DocuMind:</span> Structured clarity for the work behind the work.</footer>
       {toast && <Toast message={toast} onClose={()=>setToast("")}/>}
     </main>
   );
