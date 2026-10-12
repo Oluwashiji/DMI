@@ -46,11 +46,17 @@ Rules:
 
 
 def _invoke(messages: list, json_mode: bool) -> str:
-    model_kwargs = {"response_format": {"type": "json_object"}} if json_mode else {}
+    model_kwargs: dict = {}
+    if json_mode:
+        model_kwargs["response_format"] = {"type": "json_object"}
+    if settings.groq_model.startswith("openai/gpt-oss"):
+        # Extraction doesn't need long reasoning; "low" is faster, cheaper, and leaves
+        # more of the token budget for the actual JSON answer.
+        model_kwargs["reasoning_effort"] = "low"
     model = ChatGroq(
         model=settings.groq_model,
         temperature=0,
-        max_tokens=2000,
+        max_tokens=settings.groq_max_tokens,
         timeout=45,
         max_retries=1,
         api_key=settings.groq_api_key,

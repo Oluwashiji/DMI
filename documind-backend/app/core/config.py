@@ -22,8 +22,12 @@ class Settings(BaseSettings):
 
     # --- Groq / extraction ---
     groq_api_key: str = ""
-    # Check https://console.groq.com/docs/models if Groq retires this model.
-    groq_model: str = "llama-3.3-70b-versatile"
+    # Groq retires models regularly (llama-3.3-70b-versatile was shut down on 2026-08-16).
+    # If extraction fails with "AI model unavailable", pick a current model from
+    # https://console.groq.com/docs/models and set GROQ_MODEL - no code change needed.
+    groq_model: str = "openai/gpt-oss-120b"
+    # Reasoning models (gpt-oss) spend part of this budget "thinking" before they answer.
+    groq_max_tokens: int = 4000
     # Cap on characters of document text sent to the LLM (keeps token usage and cost down).
     max_llm_chars: int = 10000
 
