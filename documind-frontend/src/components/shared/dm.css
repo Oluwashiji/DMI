@@ -55,7 +55,7 @@
   backdrop-filter: blur(22px);
 }
 .dm-glass-hover { transition: transform .3s ease, border-color .3s ease, background .3s ease; }
-.dm-glass-hover:hover { transform: translateY(-4px); border-color: rgba(114,47,55,.35); background: linear-gradient(145deg, #ffffff, #f8eef0); }
+.dm-glass-hover:hover { transform: translateY(-4px); border-color: rgba(114,47,55,.45); background: linear-gradient(145deg, #ecd9dd, #dfc2c9); }
 .dm-hairline { border-color: var(--dm-line); }
 .dm-btn {
   display: inline-flex; align-items: center; justify-content: center; gap: 9px;
