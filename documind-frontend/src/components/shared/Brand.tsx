@@ -2,14 +2,14 @@ import { ArrowUpRight, Check, FileText, Sparkles } from "lucide-react";
 import type { ReactNode } from "react";
 import "./dm.css";
 
-export function Brand({ compact = false }: { compact?: boolean }) {
+export function Brand({ compact = false, light = false }: { compact?: boolean; light?: boolean }) {
   return (
     <div className="flex items-center gap-2.5">
       <div className="relative flex h-8 w-8 items-center justify-center rounded-[10px] bg-[#722F37] text-[#ffffff] shadow-[0_0_26px_rgba(114,47,55,.2)]">
         <FileText size={16} strokeWidth={2.5} />
         <span className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full border-2 border-[#722F37] bg-[#ffffff]" />
       </div>
-      {!compact && <span className="dm-display text-[17px] font-semibold tracking-[-.04em] text-[#1c211e]">Docu<span className="text-[#4A0E1C]">Mind</span></span>}
+      {!compact && <span className={`dm-display text-[17px] font-semibold tracking-[-.04em] ${light ? "text-white" : "text-[#1c211e]"}`}>Docu<span className={light ? "text-[#F3D2D8]" : "text-[#4A0E1C]"}>Mind</span></span>}
     </div>
   );
 }
