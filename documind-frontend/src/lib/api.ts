@@ -131,6 +131,16 @@ export interface ExtractionRecord {
   status: "pending" | "processing" | "complete" | "failed";
   extracted_data: ExtractedInvoice | null;
   created_at: string;
+  /** Whether the original upload is stored (documents processed before storage was added have none). */
+  has_file: boolean;
+  file_size: number | null;
+  content_type: string | null;
+}
+
+export interface StorageUsage {
+  used_bytes: number;
+  limit_bytes: number;
+  document_count: number;
 }
 
 export type ExtractStage = "uploading" | "extracting" | "complete" | "error";
@@ -208,7 +218,7 @@ export async function extractDocument(
 
 async function downloadFile(path: string, filename: string) {
   const res = await fetch(`${API_URL}${path}`, { headers: authHeaders() });
-  if (!res.ok) throw new ApiError(res.statusText, res.status);
+  if (!res.ok) throw new ApiError(await errorDetail(res), res.status);
   const blob = await res.blob();
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
@@ -236,6 +246,48 @@ export async function updateExtraction(extractionId: string, data: ExtractedInvo
     body: JSON.stringify(data),
   });
   return handleJson<ExtractionRecord>(res);
+}
+
+// ---------- Stored documents ----------
+
+/** Fetches the original uploaded file (needs the auth header, so it can't be a plain link). */
+export async function fetchOriginal(extractionId: string): Promise<Blob> {
+  const res = await fetch(`${API_URL}/api/extractions/${extractionId}/file`, { headers: authHeaders() });
+  if (!res.ok) throw new ApiError(await errorDetail(res), res.status);
+  return res.blob();
+}
+
+export function downloadOriginal(extractionId: string, filename: string) {
+  return downloadFile(`/api/extractions/${extractionId}/file`, filename);
+}
+
+/** Opens the original in a new tab. The tab is opened first so popup blockers allow it. */
+export async function openOriginal(extractionId: string) {
+  const tab = window.open("about:blank", "_blank");
+  try {
+    const url = URL.createObjectURL(await fetchOriginal(extractionId));
+    if (tab) tab.location.href = url;
+    else window.location.href = url;
+    setTimeout(() => URL.revokeObjectURL(url), 5 * 60 * 1000);
+  } catch (err) {
+    tab?.close();
+    throw err;
+  }
+}
+
+export async function deleteExtraction(extractionId: string) {
+  const res = await fetch(`${API_URL}/api/extractions/${extractionId}`, { method: "DELETE", headers: authHeaders() });
+  if (!res.ok) throw new ApiError(await errorDetail(res), res.status);
+}
+
+export async function clearFailedExtractions() {
+  const res = await fetch(`${API_URL}/api/extractions/failed`, { method: "DELETE", headers: authHeaders() });
+  return handleJson<{ deleted: number }>(res);
+}
+
+export async function getStorage() {
+  const res = await fetch(`${API_URL}/api/storage`, { headers: authHeaders() });
+  return handleJson<StorageUsage>(res);
 }
 
 // ---------- History ----------

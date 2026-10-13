@@ -4,6 +4,8 @@ import { clearToken, getMe, getToken, type User } from "../lib/api";
 interface AuthContextValue {
   user: User | null;
   loading: boolean;
+  /** True after the user deliberately signed out (so route guards send them home, not to /auth). */
+  signedOut: boolean;
   setUser: (user: User | null) => void;
   logout: () => void;
 }
@@ -11,8 +13,14 @@ interface AuthContextValue {
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUserState] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const [signedOut, setSignedOut] = useState(false);
+
+  const setUser = (next: User | null) => {
+    setUserState(next);
+    if (next) setSignedOut(false);
+  };
 
   useEffect(() => {
     const token = getToken();
@@ -24,18 +32,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       .then(setUser)
       .catch(() => {
         clearToken();
-        setUser(null);
+        setUserState(null);
       })
       .finally(() => setLoading(false));
   }, []);
 
   const logout = () => {
     clearToken();
-    setUser(null);
+    setSignedOut(true);
+    setUserState(null);
   };
 
   return (
-    <AuthContext.Provider value={{ user, loading, setUser, logout }}>
+    <AuthContext.Provider value={{ user, loading, signedOut, setUser, logout }}>
       {children}
     </AuthContext.Provider>
   );

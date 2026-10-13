@@ -32,7 +32,10 @@ class Settings(BaseSettings):
     max_llm_chars: int = 10000
 
     # --- Upload limits / OCR ---
-    max_upload_mb: int = 25
+    # Uploaded files are stored in Postgres (Neon free plan: 1 GB per project, shared with
+    # everything else), so keep per-file and per-user limits modest.
+    max_upload_mb: int = 10
+    max_storage_mb_per_user: int = 25
     max_pdf_pages: int = 10
     ocr_dpi: int = 200
     # Full path to the tesseract binary. Only needed on Windows/macOS when it isn't on PATH,

@@ -42,13 +42,23 @@ class ExtractedText:
     truncated: bool = False
 
 
-def sniff_kind(data: bytes) -> str | None:
-    """Identify the real file type from its bytes, not the filename."""
+def sniff_mime(data: bytes) -> str | None:
+    """Identify the real content type from the file's bytes, not its filename."""
     if b"%PDF-" in data[:1024]:
-        return "pdf"
-    if data.startswith(b"\x89PNG\r\n\x1a\n") or data.startswith(b"\xff\xd8\xff"):
-        return "image"
+        return "application/pdf"
+    if data.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "image/png"
+    if data.startswith(b"\xff\xd8\xff"):
+        return "image/jpeg"
     return None
+
+
+def sniff_kind(data: bytes) -> str | None:
+    """'pdf', 'image', or None when the bytes are not a supported file."""
+    mime = sniff_mime(data)
+    if mime is None:
+        return None
+    return "pdf" if mime == "application/pdf" else "image"
 
 
 def _ocr(image: Image.Image) -> str:

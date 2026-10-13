@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import DateTime, ForeignKey, JSON, String
+from sqlalchemy import DateTime, ForeignKey, Integer, JSON, LargeBinary, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -44,3 +44,40 @@ class Extraction(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, nullable=False)
 
     user: Mapped["User"] = relationship(back_populates="extractions")
+
+    # The original upload lives in its own table so listing history never drags file bytes along.
+    file: Mapped["ExtractionFile | None"] = relationship(
+        back_populates="extraction", uselist=False, cascade="all, delete-orphan", lazy="joined"
+    )
+
+    @property
+    def has_file(self) -> bool:
+        return self.file is not None
+
+    @property
+    def file_size(self) -> int | None:
+        return self.file.size_bytes if self.file is not None else None
+
+    @property
+    def content_type(self) -> str | None:
+        return self.file.content_type if self.file is not None else None
+
+
+class ExtractionFile(Base):
+    """The original uploaded PDF/image, stored in Postgres (Render's disk is wiped on every deploy)."""
+
+    __tablename__ = "extraction_files"
+
+    extraction_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("extractions.id", ondelete="CASCADE"), primary_key=True
+    )
+    # Denormalised from the extraction so per-user storage can be summed without a join.
+    user_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False
+    )
+    content_type: Mapped[str] = mapped_column(String(100), nullable=False)
+    size_bytes: Mapped[int] = mapped_column(Integer, nullable=False)
+    # deferred=True: the bytes are only fetched when explicitly accessed.
+    data: Mapped[bytes] = mapped_column(LargeBinary, nullable=False, deferred=True)
+
+    extraction: Mapped["Extraction"] = relationship(back_populates="file")

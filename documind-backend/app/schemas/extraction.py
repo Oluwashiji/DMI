@@ -156,9 +156,18 @@ class ExtractionOut(BaseModel):
     status: Literal["pending", "processing", "complete", "failed"]
     extracted_data: ExtractedInvoice | None = None
     created_at: datetime
+    # Whether the original upload is stored, and what it is (for previews and the storage meter).
+    has_file: bool = False
+    file_size: int | None = None
+    content_type: str | None = None
 
     @field_validator("created_at")
     @classmethod
     def _assume_utc(cls, v: datetime) -> datetime:
         # SQLite hands back naive datetimes; browsers would read those as local time.
         return v if v.tzinfo else v.replace(tzinfo=timezone.utc)
+
+class StorageOut(BaseModel):
+    used_bytes: int
+    limit_bytes: int
+    document_count: int

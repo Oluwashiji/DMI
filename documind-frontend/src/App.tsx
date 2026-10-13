@@ -5,9 +5,10 @@ import { Auth } from "./pages/Auth";
 import { Dashboard } from "./pages/Dashboard";
 
 function RequireAuth({ children }: { children: React.ReactNode }) {
-  const { user, loading } = useAuth();
+  const { user, loading, signedOut } = useAuth();
   if (loading) return null;
-  if (!user) return <Navigate to="/auth" replace />;
+  // Deliberate sign-out goes to the landing page; an anonymous visitor goes to sign-in.
+  if (!user) return <Navigate to={signedOut ? "/" : "/auth"} replace />;
   return <>{children}</>;
 }
 

@@ -8,9 +8,10 @@ import io
 import json
 import os
 import tempfile
+import uuid
 
 _tmp = tempfile.mkdtemp()
-os.environ["DATABASE_URL"] = f"sqlite:///{_tmp}/test.db"
+os.environ["DATABASE_URL"] = os.environ.get("TEST_DATABASE_URL", f"sqlite:///{_tmp}/test.db")
 os.environ["GROQ_API_KEY"] = "test-key"
 os.environ["JWT_SECRET_KEY"] = "test-secret"
 
@@ -94,7 +95,11 @@ def client():
         yield c
 
 
+RUN_ID = uuid.uuid4().hex[:8]  # unique per run, so the suite can be re-run against a database that keeps old accounts
+
+
 def signup(client, email) -> dict:
+    email = email.replace("@", f"+{RUN_ID}@")
     r = client.post("/auth/signup", json={"full_name": "Test User", "email": email, "password": "password123"})
     assert r.status_code == 201, r.text
     return {"Authorization": f"Bearer {r.json()['access_token']}"}
@@ -353,3 +358,159 @@ def test_llm_failure_streams_error(client, headers, monkeypatch):
     monkeypatch.setattr(llm, "_call_model", lambda text: "garbage")
     status, _, events = run_extract(client, headers, "inv.pdf", text_pdf())
     assert events[-1]["stage"] == "error" and "unreadable" in events[-1]["message"]
+
+# ---------- stored documents: preview, delete, storage ----------
+
+
+def invoice_jpg() -> bytes:
+    buf = io.BytesIO()
+    Image.open(io.BytesIO(invoice_png())).convert("RGB").save(buf, "JPEG", quality=90)
+    return buf.getvalue()
+
+
+def upload_ok(client, headers, name, data):
+    status, body, events = run_extract(client, headers, name, data)
+    assert status == 200 and events[-1]["stage"] == "complete", (status, body, events[-1:])
+    return events[-1]["result"]
+
+
+def history_ids(client, headers):
+    return [h["id"] for h in client.get("/api/history", headers=headers).json()]
+
+
+def test_original_is_stored_and_downloadable_for_pdf_png_and_jpg(client, fake_llm):
+    h = signup(client, "storage-types@example.com")
+    for name, data, mime in (
+        ("a.pdf", text_pdf(), "application/pdf"),
+        ("b.png", invoice_png(), "image/png"),
+        ("c.jpg", invoice_jpg(), "image/jpeg"),
+    ):
+        record = upload_ok(client, h, name, data)
+        assert record["has_file"] is True and record["file_size"] == len(data) and record["content_type"] == mime
+        resp = client.get(f"/api/extractions/{record['id']}/file", headers=h)
+        assert resp.status_code == 200 and resp.content == data
+        assert resp.headers["content-type"].startswith(mime)
+        assert resp.headers["x-content-type-options"] == "nosniff"
+        assert name in resp.headers["content-disposition"]
+
+
+def test_unicode_filename_download_header(client, fake_llm):
+    h = signup(client, "unicode@example.com")
+    record = upload_ok(client, h, "Facture été 2026.pdf", text_pdf())
+    resp = client.get(f"/api/extractions/{record['id']}/file", headers=h)
+    assert resp.status_code == 200 and "%C3%A9t%C3%A9" in resp.headers["content-disposition"]
+
+
+def test_history_does_not_load_file_bytes(client, fake_llm):
+    from sqlalchemy import event
+    from app.db.base import engine
+
+    h = signup(client, "efficient@example.com")
+    upload_ok(client, h, "a.pdf", text_pdf())
+    statements = []
+    listener = lambda conn, cur, stmt, *a: statements.append(stmt)
+    event.listen(engine, "before_cursor_execute", listener)
+    try:
+        assert client.get("/api/history", headers=h).status_code == 200
+    finally:
+        event.remove(engine, "before_cursor_execute", listener)
+    selects = [s for s in statements if s.lstrip().upper().startswith("SELECT")]
+    assert selects and not any("extraction_files.data" in s for s in selects)
+
+
+def test_failed_extraction_stores_no_file(client, monkeypatch):
+    monkeypatch.setattr(llm, "_call_model", lambda text: "garbage")
+    h = signup(client, "nofile@example.com")
+    _, _, events = run_extract(client, h, "x.pdf", text_pdf())
+    assert events[-1]["stage"] == "error"
+    record = client.get("/api/history", headers=h).json()[0]
+    assert record["status"] == "failed" and record["has_file"] is False
+    assert client.get(f"/api/extractions/{record['id']}/file", headers=h).status_code == 404
+
+
+def test_delete_removes_everything(client, fake_llm):
+    from app.db.base import SessionLocal
+    from app.db.models import ExtractionFile
+
+    h = signup(client, "deleter@example.com")
+    record = upload_ok(client, h, "gone.pdf", text_pdf())
+    rid = record["id"]
+
+    assert client.delete(f"/api/extractions/{rid}", headers=h).status_code == 204
+    assert rid not in history_ids(client, h)
+    assert client.get(f"/api/extractions/{rid}/file", headers=h).status_code == 404
+    assert client.get(f"/api/exports/csv?extraction_id={rid}", headers=h).status_code == 404
+    assert client.delete(f"/api/extractions/{rid}", headers=h).status_code == 404  # already gone
+    with SessionLocal() as db:
+        assert db.get(ExtractionFile, rid) is None  # the stored bytes were deleted too
+
+
+def test_cannot_delete_or_download_someone_elses_document(client, fake_llm):
+    owner = signup(client, "owner2@example.com")
+    other = signup(client, "other2@example.com")
+    rid = upload_ok(client, owner, "private.pdf", text_pdf())["id"]
+    assert client.delete(f"/api/extractions/{rid}", headers=other).status_code == 404
+    assert client.get(f"/api/extractions/{rid}/file", headers=other).status_code == 404
+    assert rid in history_ids(client, owner)  # untouched
+    assert client.delete(f"/api/extractions/{rid}").status_code == 401  # and auth is required
+
+
+def test_clear_failed_only_removes_failed(client, fake_llm, monkeypatch):
+    h = signup(client, "clearer@example.com")
+    good = upload_ok(client, h, "good.pdf", text_pdf())
+    blank = fitz.open()
+    blank.new_page()
+    for _ in range(2):
+        run_extract(client, h, "blank.pdf", blank.tobytes())
+    assert sum(1 for r in client.get("/api/history", headers=h).json() if r["status"] == "failed") == 2
+
+    resp = client.delete("/api/extractions/failed", headers=h)
+    assert resp.status_code == 200 and resp.json() == {"deleted": 2}
+    remaining = client.get("/api/history", headers=h).json()
+    assert [r["id"] for r in remaining] == [good["id"]]
+    assert client.delete("/api/extractions/failed", headers=h).json() == {"deleted": 0}
+
+
+def test_storage_usage_and_quota(client, fake_llm, monkeypatch):
+    from app.api.routes import extract as route
+
+    h = signup(client, "quota@example.com")
+    assert client.get("/api/storage", headers=h).json()["used_bytes"] == 0
+
+    pdf = text_pdf()
+    upload_ok(client, h, "one.pdf", pdf)
+    usage = client.get("/api/storage", headers=h).json()
+    assert usage["used_bytes"] == len(pdf) and usage["document_count"] == 1
+    assert usage["limit_bytes"] == route.settings.max_storage_mb_per_user * 1024 * 1024
+
+    # Shrink the quota so the next upload no longer fits: it is refused up front and nothing is recorded.
+    monkeypatch.setattr(route.settings, "max_storage_mb_per_user", 0)
+    before = history_ids(client, h)
+    status, body, _ = run_extract(client, h, "two.pdf", pdf)
+    assert status == 409 and "Storage limit reached" in body["detail"]
+    assert history_ids(client, h) == before
+
+    # Deleting frees the space again.
+    monkeypatch.setattr(route.settings, "max_storage_mb_per_user", 25)
+    assert client.delete(f"/api/extractions/{before[0]}", headers=h).status_code == 204
+    assert client.get("/api/storage", headers=h).json()["used_bytes"] == 0
+
+
+def test_storage_is_per_user(client, fake_llm):
+    a = signup(client, "usage-a@example.com")
+    b = signup(client, "usage-b@example.com")
+    upload_ok(client, a, "a.pdf", text_pdf())
+    assert client.get("/api/storage", headers=b).json() == {
+        "used_bytes": 0, "limit_bytes": 25 * 1024 * 1024, "document_count": 0,
+    }
+
+
+def test_deleting_while_processing_is_handled(client, fake_llm):
+    from app.api.routes import extract as route
+
+    h = signup(client, "race@example.com")
+    uid = client.get("/auth/me", headers=h).json()["id"]
+    rid = route._create_record(uid, "racing.pdf")  # a record that is "processing"
+    assert client.delete(f"/api/extractions/{rid}", headers=h).status_code == 204
+    with pytest.raises(ocr.DocumentError, match="deleted"):
+        route._complete_record(rid, ExtractedInvoice(vendor_name="X"), b"%PDF-1.4", "application/pdf")
